@@ -49,6 +49,11 @@ jobs:
           repository: SwiftlyS2-Plugins/Cookies
           path: Cookies
 
+      - name: Clean up Cookies plugin source
+        run: |
+          # Keep only Cookies.Contract, remove the main Cookies plugin to avoid dependency issues
+          rm -rf Cookies/Cookies
+
       - name: Restore and Publish
         run: |
           # Find all csproj files with CreateZip target (these produce release artifacts)
