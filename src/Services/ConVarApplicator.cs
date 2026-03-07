@@ -88,6 +88,10 @@ public sealed class ConVarApplicator
     {
       _core.Engine.ExecuteCommand("mp_give_player_c4 0");
     }
+    else
+    {
+      _core.Engine.ExecuteCommand("mp_give_player_c4 1");
+    }
   }
 
   public void ApplyBool(string name, bool value)
