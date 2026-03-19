@@ -19,18 +19,19 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Dapper" Version="2.1.66" />
-    <PackageReference Include="SwiftlyS2.CS2" Version="1.0.0" ExcludeAssets="runtime" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\GitHub\Forks\Cookies\Cookies.Contract\Cookies.Contract.csproj')">
-    <ProjectReference Include="..\..\..\GitHub\Forks\Cookies\Cookies.Contract\Cookies.Contract.csproj" ExcludeAssets="runtime" PrivateAssets="all" />
-  </ItemGroup>
-  <ItemGroup Condition="!Exists('$(MSBuildThisFileDirectory)..\..\..\GitHub\Forks\Cookies\Cookies.Contract\Cookies.Contract.csproj')">
-    <ProjectReference Include="Cookies\Cookies.Contract\Cookies.Contract.csproj" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="SwiftlyS2.CS2" Version="1.2.1" ExcludeAssets="runtime" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="resources/gamedata/**/*;resources/templates/**/*;resources/translations/**/*;resources/maps/**/*">
+    <Reference Include="Cookies.Contract">
+      <HintPath>resources/exports/Cookies.Contract.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Content Include="resources/gamedata/**/*;resources/templates/**/*;resources/translations/**/*;resources/maps/**/*;resources/exports/**/*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
