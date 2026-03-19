@@ -11,7 +11,7 @@ using SwiftlyS2_Retakes.Logging;
 
 namespace SwiftlyS2_Retakes;
 
-[PluginMetadata(Id = "Retakes", Version = "1.1.1", Name = "Retakes", Author = "aga", Description = "No description.")]
+[PluginMetadata(Id = "Retakes", Version = "1.1.2", Name = "Retakes", Author = "aga", Description = "No description.")]
 
 public partial class SwiftlyS2_Retakes : BasePlugin
 {
@@ -58,7 +58,14 @@ public partial class SwiftlyS2_Retakes : BasePlugin
 
   public override void UseSharedInterface(IInterfaceManager interfaceManager)
   {
-    var cookiesApi = interfaceManager.GetSharedInterface<IPlayerCookiesAPIv1>("Cookies.Player.v1");
+    const string cookiesKey = "Cookies.Player.v1";
+    if (!interfaceManager.HasSharedInterface(cookiesKey))
+    {
+      Core.Logger.LogPluginWarning("Retakes: Cookies shared interface is not registered. Player preferences will not be persisted.");
+      return;
+    }
+
+    var cookiesApi = interfaceManager.GetSharedInterface<IPlayerCookiesAPIv1>(cookiesKey);
     if (cookiesApi is null)
     {
       Core.Logger.LogPluginError("Retakes: Cookies plugin not found. Player preferences will not be persisted. Make sure the Cookies plugin is installed.");
