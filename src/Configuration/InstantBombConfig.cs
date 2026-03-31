@@ -3,6 +3,7 @@ namespace SwiftlyS2_Retakes.Configuration;
 /// <summary>
 /// Who receives a defuse result message.
 /// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum DefuseMessageTarget
 {
   /// <summary>Send to every player on the server.</summary>

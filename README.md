@@ -164,16 +164,23 @@ The instant defuse result messages can be targeted per-audience:
 
 | Config field | Default | Description |
 | :--- | :--- | :--- |
-| `retakes.instantBomb.successfulMessageTarget` | `All` | Who sees the "defused successfully" message |
-| `retakes.instantBomb.unsuccessfulMessageTarget` | `All` | Who sees the "defuse failed" message |
+| `retakes.instantBomb.successfulMessageTarget` | `"all"` | Who sees the "defused successfully" message |
+| `retakes.instantBomb.unsuccessfulMessageTarget` | `"all"` | Who sees the "defuse failed" message |
 
-**Accepted values:**
+**Accepted values** (must be a lowercase string):
 
 | Value | Behaviour |
 | :--- | :--- |
-| `All` | Sent to every player on the server |
-| `Team` | Sent only to the CT team (the defusing side) |
-| `Player` | Sent only to the player who attempted the defuse |
+| `"all"` | Sent to every player on the server |
+| `"team"` | Sent only to the CT team (the defusing side) |
+| `"player"` | Sent only to the player who attempted the defuse |
+
+```json
+"instantBomb": {
+  "successfulMessageTarget": "all",
+  "unsuccessfulMessageTarget": "all"
+}
+```
 
 ## Map configs
 
