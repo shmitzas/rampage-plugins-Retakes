@@ -6,6 +6,7 @@ using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.SchemaDefinitions;
+using SwiftlyS2_Retakes.Configuration;
 using SwiftlyS2_Retakes.Interfaces;
 using SwiftlyS2_Retakes.Logging;
 using SwiftlyS2_Retakes.Models;
@@ -17,6 +18,7 @@ public sealed class InstantBombService : IInstantBombService
   private readonly ISwiftlyCore _core;
   private readonly ILogger _logger;
   private readonly IMessageService _messages;
+  private readonly IRetakesConfigService _config;
 
   private readonly IConVar<bool> _instaPlant;
   private readonly IConVar<bool> _instaDefuse;
@@ -41,11 +43,12 @@ public sealed class InstantBombService : IInstantBombService
   private Guid _bombDefusedHook;
   private Guid _bombExplodedHook;
 
-  public InstantBombService(ISwiftlyCore core, ILogger logger, IMessageService messages)
+  public InstantBombService(ISwiftlyCore core, ILogger logger, IMessageService messages, IRetakesConfigService config)
   {
     _core = core;
     _logger = logger;
     _messages = messages;
+    _config = config;
 
     _instaPlant = core.ConVar.CreateOrFind("retakes_insta_plant", "Instant plant (sets mp_planttime 0 while plugin loaded)", true);
     _instaDefuse = core.ConVar.CreateOrFind("retakes_insta_defuse", "Instant defuse", true);
@@ -61,6 +64,32 @@ public sealed class InstantBombService : IInstantBombService
       if (player is null || !player.IsValid) continue;
       var localizer = _core.Translation.GetPlayerLocalizer(player);
       _messages.Chat(player, "\n" + localizer[key, args].Colored());
+    }
+  }
+
+  private void SendDefuseTranslation(IPlayer? defuserPlayer, DefuseMessageTarget target, string key, params object[] args)
+  {
+    switch (target)
+    {
+      case DefuseMessageTarget.Player:
+        if (defuserPlayer is not null && defuserPlayer.IsValid)
+        {
+          var loc = _core.Translation.GetPlayerLocalizer(defuserPlayer);
+          _messages.Chat(defuserPlayer, "\n" + loc[key, args].Colored());
+        }
+        break;
+      case DefuseMessageTarget.Team:
+        foreach (var player in _core.PlayerManager.GetAllPlayers())
+        {
+          if (player is null || !player.IsValid) continue;
+          if ((Team)player.Controller.TeamNum != Team.CT) continue;
+          var loc = _core.Translation.GetPlayerLocalizer(player);
+          _messages.Chat(player, "\n" + loc[key, args].Colored());
+        }
+        break;
+      default:
+        BroadcastTranslation(key, args);
+        break;
     }
   }
 
@@ -288,7 +317,12 @@ public sealed class InstantBombService : IInstantBombService
         _ => "instadefuse.not_possible",
       };
 
-      BroadcastTranslation(key);
+      var defuserPlayer = _core.PlayerManager.GetPlayerFromController(defuser);
+      if (defuserPlayer is not null)
+      {
+        var loc = _core.Translation.GetPlayerLocalizer(defuserPlayer);
+        _messages.Chat(defuserPlayer, "\n" + loc[key].Colored());
+      }
       return HookResult.Continue;
     }
 
@@ -328,12 +362,16 @@ public sealed class InstantBombService : IInstantBombService
 
       var defuserName = defuser.PlayerName;
 
+      var defuserPlayerResolved = _core.PlayerManager.GetPlayerFromController(defuser);
+
       if (timeRemaining < requiredDefuseTime)
       {
         _plantedBomb.C4Blow.Value = currentTime;
         _plantedBomb.C4BlowUpdated();
 
-        BroadcastTranslation(
+        SendDefuseTranslation(
+          defuserPlayerResolved,
+          _config.Config.InstantBomb.UnsuccessfulMessageTarget,
           "instadefuse.unsuccessful",
           defuserName,
           timeRemainingAtStart.ToString("0.0"),
@@ -344,7 +382,12 @@ public sealed class InstantBombService : IInstantBombService
         _plantedBomb.DefuseCountDown.Value = currentTime;
         _plantedBomb.DefuseCountDownUpdated();
 
-        BroadcastTranslation("instadefuse.successful", defuserName, timeRemainingAtStart.ToString("0.0"));
+        SendDefuseTranslation(
+          defuserPlayerResolved,
+          _config.Config.InstantBomb.SuccessfulMessageTarget,
+          "instadefuse.successful",
+          defuserName,
+          timeRemainingAtStart.ToString("0.0"));
       }
     });
 
