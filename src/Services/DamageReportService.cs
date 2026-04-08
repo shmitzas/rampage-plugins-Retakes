@@ -14,6 +14,8 @@ public sealed class DamageReportService : IDamageReportService
   private readonly IConVar<bool> _enabled;
 
   private readonly Dictionary<ulong, float> _scoreByPlayer = new();
+  private readonly Dictionary<ulong, int> _roundKills = new();
+  private ulong _lastDefuser;
   private const float ScoreDecay = 0.80f;
 
   private static ulong GetScoreKey(IPlayer player)
@@ -47,6 +49,8 @@ public sealed class DamageReportService : IDamageReportService
   public void OnRoundStart(bool isWarmup)
   {
     _byAttacker.Clear();
+    _roundKills.Clear();
+    _lastDefuser = 0;
     if (isWarmup)
     {
       _scoreByPlayer.Clear();
@@ -113,6 +117,42 @@ public sealed class DamageReportService : IDamageReportService
     var key = GetScoreKey(player);
     if (key == 0) return 0f;
     return _scoreByPlayer.TryGetValue(key, out var score) ? score : 0f;
+  }
+
+  public void OnPlayerKill(IPlayer attacker)
+  {
+    if (attacker is null || !attacker.IsValid) return;
+    var key = GetScoreKey(attacker);
+    if (key == 0) return;
+    _roundKills.TryGetValue(key, out var count);
+    _roundKills[key] = count + 1;
+  }
+
+  public int GetRoundKills(ulong steamId)
+  {
+    return _roundKills.TryGetValue(steamId, out var count) ? count : 0;
+  }
+
+  public int GetRoundDamage(ulong steamId)
+  {
+    if (steamId == 0) return 0;
+    if (!_byAttacker.TryGetValue(steamId, out var byVictim)) return 0;
+    var total = 0;
+    foreach (var (_, stats) in byVictim)
+    {
+      total += stats.Damage;
+    }
+    return total;
+  }
+
+  public void SetLastDefuser(ulong steamId)
+  {
+    _lastDefuser = steamId;
+  }
+
+  public ulong GetLastDefuser()
+  {
+    return _lastDefuser;
   }
 
   public void OnPlayerHurt(IPlayer attacker, IPlayer victim, int dmgHealth)
