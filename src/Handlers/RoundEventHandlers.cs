@@ -218,7 +218,7 @@ public sealed class RoundEventHandlers
     var core = _core;
     if (core is null) return;
 
-    var rules = core.EntitySystem.GetGameRules();
+    var rules = core.EntitySystem?.GetGameRules();
     if (rules is not null && rules.WarmupPeriod) return;
 
     var cfg = _config.Config.TeamBalance;
@@ -319,12 +319,11 @@ public sealed class RoundEventHandlers
     var enabled = _teamBalanceEnabled;
     var ratioVar = _teamBalanceTerroristRatio;
     var forceEven = _teamBalanceForceEvenOn10;
-    var skillEnabled = _teamBalanceSkillEnabled;
     var includeBots = _teamBalanceIncludeBots;
-    if (enabled is null || ratioVar is null || forceEven is null || skillEnabled is null || includeBots is null) return;
+    if (enabled is null || ratioVar is null || forceEven is null || includeBots is null) return;
     if (!enabled.Value) return;
 
-    var rules = core.EntitySystem.GetGameRules();
+    var rules = core.EntitySystem?.GetGameRules();
     if (rules is not null && rules.WarmupPeriod) return;
 
     var players = core.PlayerManager.GetAllPlayers()
@@ -332,7 +331,7 @@ public sealed class RoundEventHandlers
       .Where(p => (Team)p.Controller.TeamNum == Team.T || (Team)p.Controller.TeamNum == Team.CT)
       .ToList();
 
-    var balancePlayers = includeBots.Value
+    var balancePlayers = (includeBots?.Value ?? false)
       ? players
       : players.Where(PlayerUtil.IsHuman).ToList();
 
@@ -346,132 +345,37 @@ public sealed class RoundEventHandlers
     targetT = Math.Clamp(targetT, 1, total - 1);
 
     var currentT = balancePlayers.Count(p => (Team)p.Controller.TeamNum == Team.T);
+    var lastWinner = _state.LastWinner;
 
-    if (skillEnabled.Value)
+    // T won: keep teams as-is, only fix count mismatches from joins/leaves.
+    if (lastWinner == Team.T)
     {
-      var desiredT = targetT;
-      var desiredCT = total - targetT;
+      FixTeamCounts(balancePlayers, currentT, targetT);
+      return;
+    }
 
-      if (currentT == desiredT)
-      {
-        if (desiredT == desiredCT) return;
+    // CT won: defuser and top killers get priority for T (attacker) side.
+    if (lastWinner == Team.CT)
+    {
+      var defuserSteamId = _damageReport.GetLastDefuser();
 
-        var lastWinner = _state.LastWinner;
-        if (lastWinner != Team.T && lastWinner != Team.CT) return;
-
-        var otherTeam = lastWinner == Team.T ? Team.CT : Team.T;
-
-        var lastWinnerPlayers = balancePlayers.Where(p => (Team)p.Controller.TeamNum == lastWinner).ToList();
-        var otherPlayers = balancePlayers.Where(p => (Team)p.Controller.TeamNum == otherTeam).ToList();
-
-        if (lastWinnerPlayers.Count <= otherPlayers.Count) return;
-        if (lastWinnerPlayers.Count == 0 || otherPlayers.Count == 0) return;
-
-        var bestWinner = lastWinnerPlayers
-          .Select(p => (Player: p, Score: _damageReport.GetPlayerScore(p)))
-          .OrderByDescending(x => x.Score)
-          .ThenBy(x => x.Player.Slot)
-          .Select(x => x.Player)
-          .FirstOrDefault();
-
-        var worstOther = otherPlayers
-          .Select(p => (Player: p, Score: _damageReport.GetPlayerScore(p)))
-          .OrderBy(x => x.Score)
-          .ThenBy(x => x.Player.Slot)
-          .Select(x => x.Player)
-          .FirstOrDefault();
-
-        if (bestWinner is null || worstOther is null) return;
-
-        _state.BeginTeamChangeBypass();
-        try
-        {
-          bestWinner.ChangeTeam(otherTeam);
-          worstOther.ChangeTeam(lastWinner);
-        }
-        finally
-        {
-          _state.EndTeamChangeBypass();
-        }
-
-        return;
-      }
-
-      var scored = balancePlayers
-        .Select(p => (Player: p, Score: _damageReport.GetPlayerScore(p)))
-        .OrderByDescending(x => x.Score)
+      // Rank all players: defuser first, then by round kills desc, then by cumulative score desc.
+      var ranked = balancePlayers
+        .Select(p => (
+          Player: p,
+          IsDefuser: p.SteamID != 0 && p.SteamID == defuserSteamId,
+          RoundKills: _damageReport.GetRoundKills(p.SteamID),
+          RoundDamage: _damageReport.GetRoundDamage(p.SteamID)
+        ))
+        .OrderByDescending(x => x.IsDefuser)
+        .ThenByDescending(x => x.RoundKills)
+        .ThenByDescending(x => x.RoundDamage)
         .ThenBy(x => x.Player.Slot)
+        .Select(x => x.Player)
         .ToList();
 
-      var newT = new System.Collections.Generic.List<IPlayer>(desiredT);
-      var newCT = new System.Collections.Generic.List<IPlayer>(desiredCT);
-      float sumT = 0f;
-      float sumCT = 0f;
-
-      foreach (var (player, score) in scored)
-      {
-        if (newT.Count >= desiredT)
-        {
-          newCT.Add(player);
-          sumCT += score;
-          continue;
-        }
-
-        if (newCT.Count >= desiredCT)
-        {
-          newT.Add(player);
-          sumT += score;
-          continue;
-        }
-
-        var avgT = newT.Count == 0 ? 0f : (sumT / newT.Count);
-        var avgCT = newCT.Count == 0 ? 0f : (sumCT / newCT.Count);
-
-        if (avgT < avgCT)
-        {
-          newT.Add(player);
-          sumT += score;
-        }
-        else if (avgCT < avgT)
-        {
-          newCT.Add(player);
-          sumCT += score;
-        }
-        else
-        {
-          // In uneven setups (e.g. 1v2), always prefer the smaller side on ties
-          // so the top-scoring player doesn't end up on the larger team.
-          if (desiredT < desiredCT)
-          {
-            newT.Add(player);
-            sumT += score;
-          }
-          else if (desiredCT < desiredT)
-          {
-            newCT.Add(player);
-            sumCT += score;
-          }
-          else
-          {
-            var lastWinner = _state.LastWinner;
-            if (lastWinner == Team.T && newCT.Count < desiredCT)
-            {
-              newCT.Add(player);
-              sumCT += score;
-            }
-            else if (lastWinner == Team.CT && newT.Count < desiredT)
-            {
-              newT.Add(player);
-              sumT += score;
-            }
-            else
-            {
-              newCT.Add(player);
-              sumCT += score;
-            }
-          }
-        }
-      }
+      var newT = ranked.Take(targetT).ToList();
+      var newCT = ranked.Skip(targetT).ToList();
 
       _state.BeginTeamChangeBypass();
       try
@@ -494,6 +398,12 @@ public sealed class RoundEventHandlers
       return;
     }
 
+    // No winner yet (first round / draw): fix counts only.
+    FixTeamCounts(balancePlayers, currentT, targetT);
+  }
+
+  private void FixTeamCounts(System.Collections.Generic.List<IPlayer> balancePlayers, int currentT, int targetT)
+  {
     if (currentT == targetT) return;
 
     if (currentT > targetT)
@@ -505,17 +415,14 @@ public sealed class RoundEventHandlers
         .Take(moveCount)
         .ToList();
 
-      foreach (var p in candidates)
+      _state.BeginTeamChangeBypass();
+      try
       {
-        _state.BeginTeamChangeBypass();
-        try
-        {
-          p.ChangeTeam(Team.CT);
-        }
-        finally
-        {
-          _state.EndTeamChangeBypass();
-        }
+        foreach (var p in candidates) p.ChangeTeam(Team.CT);
+      }
+      finally
+      {
+        _state.EndTeamChangeBypass();
       }
     }
     else
@@ -527,17 +434,14 @@ public sealed class RoundEventHandlers
         .Take(moveCount)
         .ToList();
 
-      foreach (var p in candidates)
+      _state.BeginTeamChangeBypass();
+      try
       {
-        _state.BeginTeamChangeBypass();
-        try
-        {
-          p.ChangeTeam(Team.T);
-        }
-        finally
-        {
-          _state.EndTeamChangeBypass();
-        }
+        foreach (var p in candidates) p.ChangeTeam(Team.T);
+      }
+      finally
+      {
+        _state.EndTeamChangeBypass();
       }
     }
   }
@@ -550,7 +454,7 @@ public sealed class RoundEventHandlers
     var core = _core;
     if (core is not null)
     {
-      var rules = core.EntitySystem.GetGameRules();
+      var rules = core.EntitySystem?.GetGameRules();
       isWarmup = rules is not null && rules.WarmupPeriod;
     }
 

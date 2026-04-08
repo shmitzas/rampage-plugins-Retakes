@@ -137,7 +137,7 @@ The plugin automatically gives players weapons, armor, and grenades each round. 
 
 | Round Type | Armor | Primary | Secondary | Grenades | CT Defuser |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Pistol** | Kevlar | Pistols | ❌ | Flash or smoke | 1 random player |
+| **Pistol** | Kevlar (no helmet by default) | Pistols | ❌ | Flash or smoke | 1 random player |
 | **Half-Buy** | Kevlar + Helmet | SMGs/Budget rifles | ✅ Pistol | Smoke + 1-2 more | Everyone |
 | **Full-Buy** | Kevlar + Helmet | Rifles (or AWP/Scout) | ✅ Pistol | Smoke + 1-2 more | Everyone |
 
@@ -207,6 +207,8 @@ Plays 3 pistol rounds, then 2 half-buy, then full-buy for all remaining rounds.
 | `retakes.allocation.enabled` | `true` | Enable/disable weapon allocation |
 | `retakes.allocation.stripWeapons` | `true` | Remove old weapons before giving new ones |
 | `retakes.allocation.givePistolOnRifleRounds` | `true` | Give secondary pistol on half/full-buy rounds |
+| `retakes.allocation.instantSwap` | `true` | Instantly swap weapons in-hand when a player changes preference mid-round via `!guns` or `!gun` |
+| `retakes.allocation.pistolHelmet` | `false` | Give helmet (kevlar + helmet) on pistol rounds. When `false`, players only receive kevlar |
 | `retakes.preferences.usePerTeamPreferences` | `false` | Separate T/CT weapon preferences in `!guns` menu |
 
 ## Configuration
@@ -306,11 +308,33 @@ Each map file contains the spawns used by the retakes allocator.
 
 | Command | Description |
 | :--- | :--- |
-| `!guns` / `!gun` | Opens the weapon preference menu. |
+| `!guns` | Opens the weapon preference menu. |
+| `!gun <weapon>` | Quickly sets your preferred weapon via chat (see [Quick Weapon Select](#quick-weapon-select-gun) below). |
 | `!retake` | Opens the main Retakes menu (spawn preference, AWP, etc.). |
 | `!spawns` | Toggles the spawn selection menu. |
 | `!awp` | Toggles AWP preference. |
 | `!voices` | Toggles voice announcements. |
+
+### Quick Weapon Select (`!gun`)
+
+Type `!gun <weapon>` in chat to change your weapon preference **instantly** — no menu needed. The weapon is saved to your preferences and swapped in-hand immediately.
+
+**Accepted input formats:**
+- Entity names: `weapon_ak47`, `weapon_m4a1_silencer`
+- Short names: `ak`, `ak47`, `deag`, `usp`, `m4a1s`, `scout`, `famas`, `galil`, `p250`, `cz`, `57`, `r8`, etc.
+- Display names: `AK-47`, `M4A1-S`, `USP-S`
+
+**Behaviour:**
+- Validates the weapon against the **current round type** (Pistol / HalfBuy / FullBuy)
+- Automatically assigns to the correct slot (primary or secondary)
+- Tells you if the weapon isn't allowed this round or is already your preference
+
+**Examples:**
+```
+!gun ak        → sets AK-47 as your full-buy/half-buy primary
+!gun usp       → sets USP-S as your secondary (or pistol-round weapon)
+!gun m4a1s     → sets M4A1-S as your CT primary
+```
 
 ### Debug
 

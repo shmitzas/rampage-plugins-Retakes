@@ -11,7 +11,7 @@ using SwiftlyS2_Retakes.Logging;
 
 namespace SwiftlyS2_Retakes;
 
-[PluginMetadata(Id = "Retakes", Version = "1.1.7", Name = "Retakes", Author = "aga", Description = "No description.")]
+[PluginMetadata(Id = "Retakes", Version = "1.2.0", Name = "Retakes", Author = "aga", Description = "No description.")]
 
 public partial class SwiftlyS2_Retakes : BasePlugin
 {
@@ -123,7 +123,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
       _pawnLifecycle, _clutch, _prefs, _state, _config, _queue, _damageReport, _soloBot);
 
     _commandHandlers = new CommandHandlers(
-      _mapConfig, _spawnManager, _pawnLifecycle, _spawnViz, _state, _prefs, _config, _smokeScenario);
+      _mapConfig, _spawnManager, _pawnLifecycle, _spawnViz, _state, _prefs, _config, _smokeScenario, _allocation);
 
     _mapEventHandlers = new MapEventHandlers(mapName =>
     {

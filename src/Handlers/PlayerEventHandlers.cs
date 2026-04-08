@@ -27,6 +27,7 @@ public sealed class PlayerEventHandlers
   private Guid _playerDisconnectHook;
   private Guid _clientCommandHook;
   private Guid _playerHurtHook;
+  private Guid _bombDefusedHook;
 
   public PlayerEventHandlers(IPawnLifecycleService pawnLifecycle, IClutchAnnounceService clutch, IPlayerPreferencesService prefs, IRetakesStateService state, IRetakesConfigService config, IQueueService queue, IDamageReportService damageReport, ISoloBotService soloBot)
   {
@@ -49,6 +50,7 @@ public sealed class PlayerEventHandlers
     _playerDeathHook = core.GameEvent.HookPost<EventPlayerDeath>(OnPlayerDeath);
     _playerDisconnectHook = core.GameEvent.HookPost<EventPlayerDisconnect>(OnPlayerDisconnect);
     _playerHurtHook = core.GameEvent.HookPost<EventPlayerHurt>(OnPlayerHurt);
+    _bombDefusedHook = core.GameEvent.HookPost<EventBombDefused>(OnBombDefused);
     _clientCommandHook = core.Command.HookClientCommand(OnClientCommand);
   }
 
@@ -60,6 +62,7 @@ public sealed class PlayerEventHandlers
     if (_playerDeathHook != Guid.Empty) core.GameEvent.Unhook(_playerDeathHook);
     if (_playerDisconnectHook != Guid.Empty) core.GameEvent.Unhook(_playerDisconnectHook);
     if (_playerHurtHook != Guid.Empty) core.GameEvent.Unhook(_playerHurtHook);
+    if (_bombDefusedHook != Guid.Empty) core.GameEvent.Unhook(_bombDefusedHook);
     if (_clientCommandHook != Guid.Empty) core.Command.UnhookClientCommand(_clientCommandHook);
     _playerSpawnPreHook = Guid.Empty;
     _playerSpawnPostHook = Guid.Empty;
@@ -67,6 +70,7 @@ public sealed class PlayerEventHandlers
     _playerDeathHook = Guid.Empty;
     _playerDisconnectHook = Guid.Empty;
     _playerHurtHook = Guid.Empty;
+    _bombDefusedHook = Guid.Empty;
     _clientCommandHook = Guid.Empty;
     _core = null;
   }
@@ -102,7 +106,22 @@ public sealed class PlayerEventHandlers
       return HookResult.Continue;
     }
 
-    // Block team switching for players already on T/CT outside warmup
+    // Allow switching to spectator (jointeam 1 or spectate command)
+    if (cmd.StartsWith("spectate"))
+    {
+      return HookResult.Continue;
+    }
+
+    if (cmd.StartsWith("jointeam"))
+    {
+      var parts = cmd.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length >= 2 && parts[1] == "1")
+      {
+        return HookResult.Continue;
+      }
+    }
+
+    // Block T/CT switching for players already on T/CT outside warmup
     return HookResult.Stop;
   }
 
@@ -180,12 +199,13 @@ public sealed class PlayerEventHandlers
     }
 
     // Prevent manual team switching mid-round: keep participants on their locked team.
+    // Allow switching to spectator (voluntary spec).
     if (isHuman && _state.RoundLive && _state.TryGetLockedTeam(player.SteamID, out var lockedTeam))
     {
       var currentTeam = (Team)player.Controller.TeamNum;
       if (lockedTeam == Team.T || lockedTeam == Team.CT)
       {
-        if (currentTeam != lockedTeam)
+        if (currentTeam != lockedTeam && currentTeam != Team.Spectator && currentTeam != Team.None)
         {
           core?.Scheduler.NextTick(() =>
           {
@@ -193,7 +213,8 @@ public sealed class PlayerEventHandlers
             if (!_state.RoundLive) return;
             if (!_state.TryGetLockedTeam(player.SteamID, out var stillLocked)) return;
             if (stillLocked != Team.T && stillLocked != Team.CT) return;
-            if ((Team)player.Controller.TeamNum == stillLocked) return;
+            var teamNow = (Team)player.Controller.TeamNum;
+            if (teamNow == stillLocked || teamNow == Team.Spectator || teamNow == Team.None) return;
             player.ChangeTeam(stillLocked);
           });
         }
@@ -237,7 +258,33 @@ public sealed class PlayerEventHandlers
 
   private HookResult OnPlayerDeath(EventPlayerDeath @event)
   {
+    var core = _core;
+    if (core is not null)
+    {
+      var attackerId = @event.Attacker;
+      if (attackerId > 0)
+      {
+        var attacker = core.PlayerManager.GetAllPlayers()
+          .FirstOrDefault(p => p.IsValid && (p.PlayerID == attackerId || p.Slot == attackerId));
+        if (attacker is not null)
+        {
+          _damageReport.OnPlayerKill(attacker);
+        }
+      }
+    }
+
     _clutch.OnPlayerCountMayHaveChanged();
+    return HookResult.Continue;
+  }
+
+  private HookResult OnBombDefused(EventBombDefused @event)
+  {
+    var defuser = @event.UserIdPlayer;
+    if (defuser is not null && defuser.IsValid && defuser.SteamID != 0)
+    {
+      _damageReport.SetLastDefuser(defuser.SteamID);
+    }
+
     return HookResult.Continue;
   }
 

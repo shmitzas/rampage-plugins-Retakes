@@ -14,5 +14,15 @@ public interface IDamageReportService
 
   float GetPlayerScore(IPlayer player);
 
+  void OnPlayerKill(IPlayer attacker);
+
+  int GetRoundKills(ulong steamId);
+
+  int GetRoundDamage(ulong steamId);
+
+  void SetLastDefuser(ulong steamId);
+
+  ulong GetLastDefuser();
+
   void PrintRoundReport();
 }
