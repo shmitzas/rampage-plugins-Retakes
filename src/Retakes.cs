@@ -11,7 +11,7 @@ using SwiftlyS2_Retakes.Logging;
 
 namespace SwiftlyS2_Retakes;
 
-[PluginMetadata(Id = "Retakes", Version = "1.2.0", Name = "Retakes", Author = "aga", Description = "No description.")]
+[PluginMetadata(Id = "Retakes", Version = "1.3.0", Name = "Retakes", Author = "aga", Description = "No description.")]
 
 public partial class SwiftlyS2_Retakes : BasePlugin
 {
@@ -120,7 +120,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
       _messages, _allocation, _autoPlant, _clutch, _damageReport, _breaker, random, _queue, _buyMenu, _smokeScenario);
 
     _playerEventHandlers = new PlayerEventHandlers(
-      _pawnLifecycle, _clutch, _prefs, _state, _config, _queue, _damageReport, _soloBot);
+      _pawnLifecycle, _clutch, _prefs, _state, _config, _queue, _damageReport, _soloBot, _allocation);
 
     _commandHandlers = new CommandHandlers(
       _mapConfig, _spawnManager, _pawnLifecycle, _spawnViz, _state, _prefs, _config, _smokeScenario, _allocation);

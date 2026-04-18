@@ -180,7 +180,7 @@ public sealed class QueueService : IQueueService
 
         _queuePlayers.Remove(player.SteamID);
         _activePlayers.Add(player.SteamID);
-        player.ChangeTeam(Team.CT);
+        player.SwitchTeam(Team.CT);
         _logger.LogInformation("QueueService: Moved {Name} from queue to active", player.Controller.PlayerName);
       }
     }
@@ -248,7 +248,7 @@ public sealed class QueueService : IQueueService
 
       _activePlayers.Add(vipPlayer.SteamID);
       _queuePlayers.Remove(vipPlayer.SteamID);
-      vipPlayer.ChangeTeam(Team.CT);
+      vipPlayer.SwitchTeam(Team.CT);
       var vipLoc = _core.Translation.GetPlayerLocalizer(vipPlayer);
       _messages.Chat(vipPlayer, vipLoc["queue.moved_in", replaceablePlayer.Controller.PlayerName]);
 

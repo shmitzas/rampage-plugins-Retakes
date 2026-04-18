@@ -288,12 +288,38 @@ public sealed class BuyMenuService : IBuyMenuService
       ? weaponName
       : $"weapon_{weaponName}";
 
+    var player = @event.UserIdPlayer;
+
+    // Block helmet on pistol rounds when PistolHelmet is disabled
+    if (normalizedName.Equals("item_assaultsuit", StringComparison.OrdinalIgnoreCase)
+        || weaponName.Equals("item_assaultsuit", StringComparison.OrdinalIgnoreCase)
+        || weaponName.Equals("assaultsuit", StringComparison.OrdinalIgnoreCase))
+    {
+      if (_allocation.CurrentRoundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
+      {
+        if (player is not null && player.IsValid)
+        {
+          _core.Scheduler.NextTick(() =>
+          {
+            if (player is null || !player.IsValid) return;
+            var pawn = player.Pawn;
+            if (pawn is null || !pawn.IsValid) return;
+            if (pawn.ItemServices is CCSPlayer_ItemServices svc)
+            {
+              svc.HasHelmet = false;
+              svc.HasHelmetUpdated();
+            }
+          });
+        }
+        return HookResult.Continue;
+      }
+    }
+
     if (IsAlwaysAllowed(normalizedName))
     {
       return HookResult.Continue;
     }
 
-    var player = @event.UserIdPlayer;
     if (player is null || !player.IsValid)
     {
       return HookResult.Continue;

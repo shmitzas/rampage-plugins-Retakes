@@ -123,6 +123,8 @@ public sealed class RetakesCfgGenerator
       mp_solid_teammates 1
       {teamAwardsLine.TrimEnd()}
       mp_buytime 0
+      mp_free_armor 0
+      mp_max_armor 0
       mp_warmup_pausetimer 0
       sv_skirmish_id 0
 

@@ -138,10 +138,19 @@ public sealed class AllocationService : IAllocationService
     return RoundType.FullBuy;
   }
 
+  public void PreSelectRoundType()
+  {
+    CurrentRoundType = SelectRoundType();
+  }
+
   public void AllocateForCurrentPlayers(IPawnLifecycleService pawnLifecycle)
   {
-    var roundType = SelectRoundType();
-    CurrentRoundType = roundType;
+    if (CurrentRoundType is null)
+    {
+      PreSelectRoundType();
+    }
+
+    var roundType = CurrentRoundType!.Value;
 
     if (!_enabled.Value) return;
 
@@ -183,6 +192,24 @@ public sealed class AllocationService : IAllocationService
         try
         {
           GiveLoadout(p, roundType, pistolDefuserSlot, awpReceivers, ssg08Receivers);
+
+          // After loadout is given, schedule a delayed helmet strip for pistol rounds.
+          // The engine may re-apply helmet after our GiveItem calls, so we need to
+          // strip it on the next tick to ensure it sticks.
+          if (roundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
+          {
+            _core.Scheduler.NextTick(() =>
+            {
+              if (p is null || !p.IsValid) return;
+              var pawn = p.Pawn;
+              if (pawn is null || !pawn.IsValid) return;
+              if (pawn.ItemServices is CCSPlayer_ItemServices svc && svc.HasHelmet)
+              {
+                svc.HasHelmet = false;
+                svc.HasHelmetUpdated();
+              }
+            });
+          }
         }
         catch (Exception ex)
         {
@@ -210,6 +237,11 @@ public sealed class AllocationService : IAllocationService
     if (roundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
     {
       itemServices.GiveItem("item_kevlar");
+      if (itemServices is CCSPlayer_ItemServices csItemServices)
+      {
+        csItemServices.HasHelmet = false;
+        csItemServices.HasHelmetUpdated();
+      }
     }
     else
     {

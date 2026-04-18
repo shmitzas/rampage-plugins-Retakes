@@ -2,7 +2,9 @@ using SwiftlyS2.Shared.GameEventDefinitions;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Players;
+using SwiftlyS2.Shared.SchemaDefinitions;
 using SwiftlyS2_Retakes.Interfaces;
+using SwiftlyS2_Retakes.Models;
 using SwiftlyS2_Retakes.Utils;
 using System.Linq;
 
@@ -19,6 +21,7 @@ public sealed class PlayerEventHandlers
   private readonly IQueueService _queue;
   private readonly IDamageReportService _damageReport;
   private readonly ISoloBotService _soloBot;
+  private readonly IAllocationService _allocation;
 
   private Guid _playerSpawnPreHook;
   private Guid _playerSpawnPostHook;
@@ -29,7 +32,7 @@ public sealed class PlayerEventHandlers
   private Guid _playerHurtHook;
   private Guid _bombDefusedHook;
 
-  public PlayerEventHandlers(IPawnLifecycleService pawnLifecycle, IClutchAnnounceService clutch, IPlayerPreferencesService prefs, IRetakesStateService state, IRetakesConfigService config, IQueueService queue, IDamageReportService damageReport, ISoloBotService soloBot)
+  public PlayerEventHandlers(IPawnLifecycleService pawnLifecycle, IClutchAnnounceService clutch, IPlayerPreferencesService prefs, IRetakesStateService state, IRetakesConfigService config, IQueueService queue, IDamageReportService damageReport, ISoloBotService soloBot, IAllocationService allocation)
   {
     _pawnLifecycle = pawnLifecycle;
     _clutch = clutch;
@@ -39,6 +42,7 @@ public sealed class PlayerEventHandlers
     _queue = queue;
     _damageReport = damageReport;
     _soloBot = soloBot;
+    _allocation = allocation;
   }
 
   public void Register(ISwiftlyCore core)
@@ -178,7 +182,7 @@ public sealed class PlayerEventHandlers
           if ((tCount == 1 && ctCount == 0) || (tCount == 0 && ctCount == 1))
           {
             var targetTeam = ctCount == 0 ? Team.CT : Team.T;
-            player.ChangeTeam(targetTeam);
+            player.SwitchTeam(targetTeam);
             if (_state.TryQueueRestartThisRound())
             {
               core.Engine.ExecuteCommand("mp_restartgame 1");
@@ -215,7 +219,7 @@ public sealed class PlayerEventHandlers
             if (stillLocked != Team.T && stillLocked != Team.CT) return;
             var teamNow = (Team)player.Controller.TeamNum;
             if (teamNow == stillLocked || teamNow == Team.Spectator || teamNow == Team.None) return;
-            player.ChangeTeam(stillLocked);
+            player.SwitchTeam(stillLocked);
           });
         }
       }
@@ -251,6 +255,23 @@ public sealed class PlayerEventHandlers
     if (player is not null && player.IsValid && PlayerUtil.IsHuman(player))
     {
       _soloBot.UpdateSoloBot();
+    }
+
+    // Strip helmet carried over from warmup or re-applied by the engine on pistol rounds
+    if (_allocation.CurrentRoundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
+    {
+      var p = player;
+      _core?.Scheduler.NextTick(() =>
+      {
+        if (p is null || !p.IsValid) return;
+        var pawn = p.Pawn;
+        if (pawn is null || !pawn.IsValid) return;
+        if (pawn.ItemServices is CCSPlayer_ItemServices svc && svc.HasHelmet)
+        {
+          svc.HasHelmet = false;
+          svc.HasHelmetUpdated();
+        }
+      });
     }
 
     return HookResult.Continue;
