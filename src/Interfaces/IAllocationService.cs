@@ -24,6 +24,12 @@ public interface IAllocationService
   RoundType SelectRoundType();
 
   /// <summary>
+  /// Pre-selects the round type and stores it in <see cref="CurrentRoundType"/>.
+  /// Call this before the round starts so convars can be applied in time.
+  /// </summary>
+  void PreSelectRoundType();
+
+  /// <summary>
   /// Allocates weapons for all current players.
   /// </summary>
   /// <param name="pawnLifecycle">The pawn lifecycle service</param>

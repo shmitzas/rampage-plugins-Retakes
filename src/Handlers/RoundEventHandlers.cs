@@ -210,6 +210,30 @@ public sealed class RoundEventHandlers
     TryBalanceTeams();
     _soloBot.UpdateSoloBot();
     _pawnLifecycle.OnRoundPrestart();
+
+    // Pre-select round type and override armor convars before the round starts
+    // so the engine respects them when spawning players.
+    _allocation.PreSelectRoundType();
+    var core = _core;
+    if (core is not null)
+    {
+      var rules = core.EntitySystem?.GetGameRules();
+      var isWarmup = rules is not null && rules.WarmupPeriod;
+      if (!isWarmup)
+      {
+        if (_allocation.CurrentRoundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
+        {
+          core.Engine.ExecuteCommand("mp_free_armor 0");
+          core.Engine.ExecuteCommand("mp_max_armor 1");
+        }
+        else
+        {
+          core.Engine.ExecuteCommand("mp_free_armor 2");
+          core.Engine.ExecuteCommand("mp_max_armor 2");
+        }
+      }
+    }
+
     return HookResult.Continue;
   }
 
@@ -276,12 +300,12 @@ public sealed class RoundEventHandlers
     {
       foreach (var p in newT)
       {
-        p.ChangeTeam(Team.T);
+        p.SwitchTeam(Team.T);
       }
 
       foreach (var p in newCt)
       {
-        p.ChangeTeam(Team.CT);
+        p.SwitchTeam(Team.CT);
       }
     }
     finally
@@ -359,16 +383,14 @@ public sealed class RoundEventHandlers
     {
       var defuserSteamId = _damageReport.GetLastDefuser();
 
-      // Rank all players: defuser first, then by round kills desc, then by cumulative score desc.
+      // Rank all players: defuser first, then by round damage desc.
       var ranked = balancePlayers
         .Select(p => (
           Player: p,
           IsDefuser: p.SteamID != 0 && p.SteamID == defuserSteamId,
-          RoundKills: _damageReport.GetRoundKills(p.SteamID),
           RoundDamage: _damageReport.GetRoundDamage(p.SteamID)
         ))
         .OrderByDescending(x => x.IsDefuser)
-        .ThenByDescending(x => x.RoundKills)
         .ThenByDescending(x => x.RoundDamage)
         .ThenBy(x => x.Player.Slot)
         .Select(x => x.Player)
@@ -382,12 +404,12 @@ public sealed class RoundEventHandlers
       {
         foreach (var p in newT)
         {
-          if ((Team)p.Controller.TeamNum != Team.T) p.ChangeTeam(Team.T);
+          if ((Team)p.Controller.TeamNum != Team.T) p.SwitchTeam(Team.T);
         }
 
         foreach (var p in newCT)
         {
-          if ((Team)p.Controller.TeamNum != Team.CT) p.ChangeTeam(Team.CT);
+          if ((Team)p.Controller.TeamNum != Team.CT) p.SwitchTeam(Team.CT);
         }
       }
       finally
@@ -418,7 +440,7 @@ public sealed class RoundEventHandlers
       _state.BeginTeamChangeBypass();
       try
       {
-        foreach (var p in candidates) p.ChangeTeam(Team.CT);
+        foreach (var p in candidates) p.SwitchTeam(Team.CT);
       }
       finally
       {
@@ -437,7 +459,7 @@ public sealed class RoundEventHandlers
       _state.BeginTeamChangeBypass();
       try
       {
-        foreach (var p in candidates) p.ChangeTeam(Team.T);
+        foreach (var p in candidates) p.SwitchTeam(Team.T);
       }
       finally
       {
@@ -603,7 +625,7 @@ public sealed class RoundEventHandlers
           if (team != Team.Spectator && team != Team.None) continue;
 
           var target = tCount <= ctCount ? Team.T : Team.CT;
-          p.ChangeTeam(target);
+          p.SwitchTeam(target);
 
           if (target == Team.T) tCount++;
           else ctCount++;

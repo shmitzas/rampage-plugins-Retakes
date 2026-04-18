@@ -94,7 +94,7 @@ public sealed class SoloBotService : ISoloBotService
         if (botTeam == humanTeam)
         {
           _logger.LogPluginDebug("Retakes: solo-bot: moving existing bot to opposite team (botTeam={BotTeam}, humanTeam={HumanTeam})", botTeam, humanTeam);
-          bot.ChangeTeam(desiredBotTeam);
+          bot.SwitchTeam(desiredBotTeam);
           _lastActionTick = nowTick;
         }
         return;

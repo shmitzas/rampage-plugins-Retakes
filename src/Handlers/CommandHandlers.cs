@@ -989,9 +989,8 @@ public sealed class CommandHandlers
         var ct = (Team)args.Player.Controller.TeamNum == Team.CT;
         _prefs.SetPistolPrimary(args.Player.SteamID, ct, w);
         if (_allocation.InstantSwapEnabled && _allocation.CurrentRoundType == RoundType.Pistol)
-          ReplaceWeaponInSlot(args.Player, w, isPistolSlot: true);
+          await ReplaceWeaponInSlotAsync(args.Player, w, isPistolSlot: true);
         core.MenusAPI.OpenMenuForPlayer(args.Player, BuildPistolMenu(core, args.Player));
-        await ValueTask.CompletedTask;
       };
       builder.AddOption(opt);
     }
@@ -1059,10 +1058,9 @@ public sealed class CommandHandlers
         }
 
         if (_allocation.InstantSwapEnabled && _allocation.CurrentRoundType == roundType)
-          ReplaceWeaponInSlot(args.Player, w, isPistolSlot: !isPrimary);
+          await ReplaceWeaponInSlotAsync(args.Player, w, isPistolSlot: !isPrimary);
 
         core.MenusAPI.OpenMenuForPlayer(args.Player, BuildRoundPackMenu(core, args.Player, roundType));
-        await ValueTask.CompletedTask;
       };
       builder.AddOption(opt);
     }
@@ -1424,6 +1422,20 @@ public sealed class CommandHandlers
     var slot = isPistolSlot ? gear_slot_t.GEAR_SLOT_PISTOL : gear_slot_t.GEAR_SLOT_RIFLE;
     weaponServices.RemoveWeaponBySlot(slot);
     itemServices.GiveItem(weaponName);
+  }
+
+  private static async Task ReplaceWeaponInSlotAsync(IPlayer player, string weaponName, bool isPistolSlot)
+  {
+    var pawn = player.PlayerPawn;
+    if (pawn is null) return;
+
+    var weaponServices = pawn.WeaponServices;
+    var itemServices = pawn.ItemServices;
+    if (weaponServices is null || itemServices is null) return;
+
+    var slot = isPistolSlot ? gear_slot_t.GEAR_SLOT_PISTOL : gear_slot_t.GEAR_SLOT_RIFLE;
+    await weaponServices.RemoveWeaponBySlotAsync(slot);
+    await itemServices.GiveItemAsync(weaponName);
   }
 
   private void Awp(ICommandContext context)
