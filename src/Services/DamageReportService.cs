@@ -15,6 +15,7 @@ public sealed class DamageReportService : IDamageReportService
 
   private readonly Dictionary<ulong, float> _scoreByPlayer = new();
   private readonly Dictionary<ulong, int> _roundKills = new();
+  private readonly Dictionary<ulong, int> _lastRoundDamage = new();
   private ulong _lastDefuser;
   private const float ScoreDecay = 0.80f;
 
@@ -77,6 +78,15 @@ public sealed class DamageReportService : IDamageReportService
 
   public void OnRoundEnd()
   {
+    // Snapshot this round's raw damage so the next round's grenade allocation can use it.
+    _lastRoundDamage.Clear();
+    foreach (var (attackerSteamId, byVictim) in _byAttacker)
+    {
+      var dmg = 0;
+      foreach (var (_, stats) in byVictim) dmg += stats.Damage;
+      if (dmg > 0) _lastRoundDamage[attackerSteamId] = dmg;
+    }
+
     if (_scoreByPlayer.Count > 0)
     {
       var keys = _scoreByPlayer.Keys.ToList();
@@ -143,6 +153,11 @@ public sealed class DamageReportService : IDamageReportService
       total += stats.Damage;
     }
     return total;
+  }
+
+  public int GetLastRoundDamage(ulong steamId)
+  {
+    return _lastRoundDamage.TryGetValue(steamId, out var dmg) ? dmg : 0;
   }
 
   public void SetLastDefuser(ulong steamId)

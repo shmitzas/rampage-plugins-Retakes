@@ -15,6 +15,7 @@ public sealed class QueueService : IQueueService
   private readonly ILogger _logger;
   private readonly IRetakesConfigService _config;
   private readonly IMessageService _messages;
+  private readonly IRetakesStateService _state;
 
   private readonly HashSet<ulong> _activePlayers = new();
   private readonly HashSet<ulong> _queuePlayers = new();
@@ -27,12 +28,13 @@ public sealed class QueueService : IQueueService
   public int ActiveCount => _activePlayers.Count;
   public int QueueCount => _queuePlayers.Count;
 
-  public QueueService(ISwiftlyCore core, ILogger logger, IRetakesConfigService config, IMessageService messages)
+  public QueueService(ISwiftlyCore core, ILogger logger, IRetakesConfigService config, IMessageService messages, IRetakesStateService state)
   {
     _core = core;
     _logger = logger;
     _config = config;
     _messages = messages;
+    _state = state;
   }
 
   public int GetTargetNumTerrorists()
@@ -114,7 +116,7 @@ public sealed class QueueService : IQueueService
       }
 
       CheckRoundDone();
-      return HookResult.Handled;
+      return HookResult.Continue;
     }
 
     // Player is not active - check if we can add them
@@ -145,11 +147,25 @@ public sealed class QueueService : IQueueService
         }
 
         player.ChangeTeam(Team.Spectator);
+        return HookResult.Stop;
       }
     }
 
-    CheckRoundDone();
-    return HookResult.Handled;
+    // Player is already queued and tries to join T/CT — block until next round
+    if (toTeam == Team.T || toTeam == Team.CT)
+    {
+      CheckRoundDone();
+      return HookResult.Stop;
+    }
+
+    // Allow queued player to spectate (removes from queue)
+    if (toTeam == Team.Spectator || toTeam == Team.None)
+    {
+      RemovePlayerFromQueues(steamId);
+      return HookResult.Continue;
+    }
+
+    return HookResult.Continue;
   }
 
   public void Update()
@@ -180,7 +196,9 @@ public sealed class QueueService : IQueueService
 
         _queuePlayers.Remove(player.SteamID);
         _activePlayers.Add(player.SteamID);
-        player.SwitchTeam(Team.CT);
+        _state.BeginTeamChangeBypass();
+        try { player.SwitchTeam(Team.CT); }
+        finally { _state.EndTeamChangeBypass(); }
         _logger.LogInformation("QueueService: Moved {Name} from queue to active", player.Controller.PlayerName);
       }
     }
@@ -248,7 +266,9 @@ public sealed class QueueService : IQueueService
 
       _activePlayers.Add(vipPlayer.SteamID);
       _queuePlayers.Remove(vipPlayer.SteamID);
-      vipPlayer.SwitchTeam(Team.CT);
+      _state.BeginTeamChangeBypass();
+      try { vipPlayer.SwitchTeam(Team.CT); }
+      finally { _state.EndTeamChangeBypass(); }
       var vipLoc = _core.Translation.GetPlayerLocalizer(vipPlayer);
       _messages.Chat(vipPlayer, vipLoc["queue.moved_in", replaceablePlayer.Controller.PlayerName]);
 

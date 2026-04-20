@@ -6,6 +6,7 @@ namespace SwiftlyS2_Retakes.Configuration;
 public sealed class RetakesConfig
 {
   public AllocationConfig Allocation { get; set; } = new();
+  public GrenadeConfig Grenades { get; set; } = new();
   public PreferencesConfig Preferences { get; set; } = new();
   public WeaponsConfig Weapons { get; set; } = new();
   public BombConfig Bomb { get; set; } = new();

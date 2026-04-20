@@ -378,13 +378,19 @@ public sealed class RoundEventHandlers
       return;
     }
 
-    // CT won: defuser and top killers get priority for T (attacker) side.
+    // CT won: all T players become defenders, top CTs earn attacker (T) slots.
     if (lastWinner == Team.CT)
     {
       var defuserSteamId = _damageReport.GetLastDefuser();
 
-      // Rank all players: defuser first, then by round damage desc.
-      var ranked = balancePlayers
+      // Split by current team before making any changes.
+      var currentTs = balancePlayers
+        .Where(p => (Team)p.Controller.TeamNum == Team.T)
+        .ToList();
+
+      // Rank CTs: defuser first, then by round damage desc.
+      var rankedCTs = balancePlayers
+        .Where(p => (Team)p.Controller.TeamNum == Team.CT)
         .Select(p => (
           Player: p,
           IsDefuser: p.SteamID != 0 && p.SteamID == defuserSteamId,
@@ -396,20 +402,35 @@ public sealed class RoundEventHandlers
         .Select(x => x.Player)
         .ToList();
 
-      var newT = ranked.Take(targetT).ToList();
-      var newCT = ranked.Skip(targetT).ToList();
+      // Top CTs fill T slots; if not enough CTs, backfill from former Ts by damage.
+      var newT = rankedCTs.Take(targetT).ToList();
+      if (newT.Count < targetT)
+      {
+        var backfill = currentTs
+          .OrderByDescending(p => _damageReport.GetRoundDamage(p.SteamID))
+          .ThenBy(p => p.Slot)
+          .Take(targetT - newT.Count)
+          .ToList();
+        newT.AddRange(backfill);
+      }
+
+      var newTSet = new System.Collections.Generic.HashSet<int>(newT.Select(p => p.Slot));
 
       _state.BeginTeamChangeBypass();
       try
       {
-        foreach (var p in newT)
+        // Step 1: Move all losing T players to CT first.
+        foreach (var p in currentTs)
         {
-          if ((Team)p.Controller.TeamNum != Team.T) p.SwitchTeam(Team.T);
+          if (!newTSet.Contains(p.Slot))
+            p.SwitchTeam(Team.CT);
         }
 
-        foreach (var p in newCT)
+        // Step 2: Move top CTs to T.
+        foreach (var p in newT)
         {
-          if ((Team)p.Controller.TeamNum != Team.CT) p.SwitchTeam(Team.CT);
+          if ((Team)p.Controller.TeamNum != Team.T)
+            p.SwitchTeam(Team.T);
         }
       }
       finally
