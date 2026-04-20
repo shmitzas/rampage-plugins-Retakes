@@ -20,6 +20,8 @@ public interface IDamageReportService
 
   int GetRoundDamage(ulong steamId);
 
+  int GetLastRoundDamage(ulong steamId);
+
   void SetLastDefuser(ulong steamId);
 
   ulong GetLastDefuser();

@@ -48,8 +48,9 @@ public sealed class AllocationService : IAllocationService
   private readonly IConVar<bool> _givePistolOnRifleRounds;
   private readonly IConVar<bool> _stripRemove;
   private readonly IRetakesStateService _state;
+  private readonly IDamageReportService _damageReport;
 
-  public AllocationService(ISwiftlyCore core, ILogger logger, Random random, IPlayerPreferencesService prefs, IRetakesConfigService config, IRetakesStateService state)
+  public AllocationService(ISwiftlyCore core, ILogger logger, Random random, IPlayerPreferencesService prefs, IRetakesConfigService config, IRetakesStateService state, IDamageReportService damageReport)
   {
     _core = core;
     _logger = logger;
@@ -57,6 +58,7 @@ public sealed class AllocationService : IAllocationService
     _prefs = prefs;
     _config = config;
     _state = state;
+    _damageReport = damageReport;
 
     _enabled = core.ConVar.CreateOrFind("retakes_allocation_enabled", "Enable weapon allocation", true);
     _roundType = core.ConVar.CreateOrFind("retakes_round_type", "Round type: random|pistol|half|full|sequence", "random");
@@ -185,13 +187,16 @@ public sealed class AllocationService : IAllocationService
       }
     }
 
+    // Pre-compute dynamic grenade assignments (requires full team lists, so done here).
+    var grenadeAssignments = ComputeDynamicGrenadeAssignments(ct, t, roundType);
+
     foreach (var p in players)
     {
       pawnLifecycle.WhenPawnReady(p, _ =>
       {
         try
         {
-          GiveLoadout(p, roundType, pistolDefuserSlot, awpReceivers, ssg08Receivers);
+          GiveLoadout(p, roundType, pistolDefuserSlot, awpReceivers, ssg08Receivers, grenadeAssignments);
 
           // After loadout is given, schedule a delayed helmet strip for pistol rounds.
           // The engine may re-apply helmet after our GiveItem calls, so we need to
@@ -219,7 +224,7 @@ public sealed class AllocationService : IAllocationService
     }
   }
 
-  private void GiveLoadout(IPlayer player, RoundType roundType, int pistolDefuserSlot, HashSet<ulong> awpReceivers, HashSet<ulong> ssg08Receivers)
+  private void GiveLoadout(IPlayer player, RoundType roundType, int pistolDefuserSlot, HashSet<ulong> awpReceivers, HashSet<ulong> ssg08Receivers, IReadOnlyDictionary<ulong, List<string>> grenadeAssignments)
   {
     var pawn = player.Pawn;
     if (pawn is null || !pawn.IsValid) return;
@@ -301,7 +306,7 @@ public sealed class AllocationService : IAllocationService
       }
     }
 
-    foreach (var nade in SelectUtil(team, roundType))
+    foreach (var nade in SelectGrenades(team, roundType, player.SteamID, grenadeAssignments))
     {
       itemServices.GiveItem(nade);
     }
@@ -580,33 +585,174 @@ public sealed class AllocationService : IAllocationService
     return false;
   }
 
-  private IEnumerable<string> SelectUtil(Team team, RoundType roundType)
+  private IReadOnlyDictionary<ulong, List<string>> ComputeDynamicGrenadeAssignments(
+    List<IPlayer> ct, List<IPlayer> t, RoundType roundType)
   {
-    if (roundType == RoundType.Pistol)
+    var cfg = _config.Config.Grenades;
+    var allocType = (cfg.AllocationType ?? "random").Trim();
+    if (!allocType.Equals("dynamic", StringComparison.OrdinalIgnoreCase))
+      return new Dictionary<ulong, List<string>>();
+
+    var assignments = new Dictionary<ulong, List<string>>();
+    var roundCfg = GetRoundGrenadeConfig(roundType, cfg);
+    var minDmg = Math.Max(0, cfg.DynamicMinDamage);
+    var maxPerPlayer = cfg.DynamicMaxPerPlayer;
+    var topFraction = Math.Clamp(cfg.DynamicTopFraction, 0f, 1f);
+    var maxPerGrenade = cfg.MaxPerGrenade;
+
+    AssignDynamicGrenadesForTeam(t, roundCfg.T.DynamicPool, minDmg, maxPerPlayer, topFraction, cfg.DynamicUseCumulativeScore, maxPerGrenade, assignments);
+    AssignDynamicGrenadesForTeam(ct, roundCfg.Ct.DynamicPool, minDmg, maxPerPlayer, topFraction, cfg.DynamicUseCumulativeScore, maxPerGrenade, assignments);
+
+    return assignments;
+  }
+
+  private void AssignDynamicGrenadesForTeam(
+    List<IPlayer> players,
+    List<string> pool,
+    int minDmg,
+    int maxPerPlayer,
+    float topFraction,
+    bool useCumulativeScore,
+    IReadOnlyDictionary<string, int> maxPerGrenade,
+    Dictionary<ulong, List<string>> assignments)
+  {
+    if (pool.Count == 0) return;
+
+    // Filter to players who dealt at least minDmg last round, then sort by priority descending.
+    var eligible = players
+      .Select(p => (
+        Player: p,
+        LastDmg: _damageReport.GetLastRoundDamage(p.SteamID),
+        Score: useCumulativeScore ? _damageReport.GetPlayerScore(p.SteamID) : 0f))
+      .Where(x => x.LastDmg >= minDmg)
+      .OrderByDescending(x => useCumulativeScore ? (double)x.Score : x.LastDmg)
+      .Select(x => x.Player)
+      .ToList();
+
+    // Apply TopFraction cap: only allow the top fraction of performers to receive grenades.
+    // Round up so that e.g. 1 out of 1 eligible is always included.
+    if (topFraction < 1f && eligible.Count > 0)
     {
-      return _random.Next(0, 2) == 0
-        ? new[] { "weapon_flashbang" }
-        : new[] { "weapon_smokegrenade" };
+      var cap = Math.Max(1, (int)Math.Ceiling(eligible.Count * topFraction));
+      if (eligible.Count > cap)
+        eligible = eligible.Take(cap).ToList();
     }
 
-    var extraPool = team == Team.T
-      ? new List<string> { "weapon_flashbang", "weapon_hegrenade", "weapon_molotov" }
-      : new List<string> { "weapon_flashbang", "weapon_hegrenade", "weapon_incgrenade" };
+    if (eligible.Count == 0) return;
 
-    var result = new List<string> { "weapon_smokegrenade" };
-
-    if (extraPool.Count > 0)
+    // Distribute pool items round-robin across eligible players (highest priority first).
+    var totalCounts = new Dictionary<ulong, int>(eligible.Count);
+    // grenade type -> (steamId -> count)
+    var grenadeCounts = new Dictionary<string, Dictionary<ulong, int>>(StringComparer.OrdinalIgnoreCase);
+    for (var i = 0; i < pool.Count; i++)
     {
-      var first = extraPool[_random.Next(extraPool.Count)];
-      result.Add(first);
-      extraPool.Remove(first);
+      var grenade = pool[i];
+
+      // Find the next eligible player who hasn't hit the per-player cap or the per-grenade cap.
+      IPlayer? recipient = null;
+      for (var attempt = 0; attempt < eligible.Count; attempt++)
+      {
+        var candidate = eligible[(i + attempt) % eligible.Count];
+        var sid = candidate.SteamID;
+
+        totalCounts.TryGetValue(sid, out var total);
+        if (maxPerPlayer > 0 && total >= maxPerPlayer) continue;
+
+        if (maxPerGrenade.TryGetValue(grenade, out var grenadeMax))
+        {
+          if (!grenadeCounts.TryGetValue(grenade, out var byPlayer))
+            byPlayer = new Dictionary<ulong, int>();
+          byPlayer.TryGetValue(sid, out var grenadeCount);
+          if (grenadeCount >= grenadeMax) continue;
+        }
+
+        recipient = candidate;
+        break;
+      }
+      if (recipient is null) continue; // no eligible player can receive this grenade
+
+      var recipientId = recipient.SteamID;
+      if (!assignments.TryGetValue(recipientId, out var list))
+      {
+        list = new List<string>();
+        assignments[recipientId] = list;
+      }
+      list.Add(grenade);
+      totalCounts[recipientId] = (totalCounts.TryGetValue(recipientId, out var tc) ? tc : 0) + 1;
+
+      if (!grenadeCounts.TryGetValue(grenade, out var gc))
+      {
+        gc = new Dictionary<ulong, int>();
+        grenadeCounts[grenade] = gc;
+      }
+      gc[recipientId] = (gc.TryGetValue(recipientId, out var prev) ? prev : 0) + 1;
+    }
+  }
+
+  private IEnumerable<string> SelectGrenades(
+    Team team,
+    RoundType roundType,
+    ulong steamId,
+    IReadOnlyDictionary<ulong, List<string>> dynamicAssignments)
+  {
+    var cfg = _config.Config.Grenades;
+    var allocType = (cfg.AllocationType ?? "random").Trim();
+
+    var roundCfg = GetRoundGrenadeConfig(roundType, cfg);
+    var teamCfg = team == Team.CT ? roundCfg.Ct : roundCfg.T;
+
+    if (allocType.Equals("fixed", StringComparison.OrdinalIgnoreCase))
+      return ApplyMaxPerGrenade(teamCfg.Fixed, cfg.MaxPerGrenade);
+
+    if (allocType.Equals("dynamic", StringComparison.OrdinalIgnoreCase))
+    {
+      var grenades = dynamicAssignments.TryGetValue(steamId, out var assigned) ? assigned : (IEnumerable<string>)Array.Empty<string>();
+      return ApplyMaxPerGrenade(grenades, cfg.MaxPerGrenade);
     }
 
-    if (roundType == RoundType.FullBuy && extraPool.Count > 0 && _random.NextDouble() < 0.5)
+    // Default: random — roll each grenade independently.
+    var result = new List<string>(teamCfg.RandomChances.Count);
+    var rolledCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var (grenade, chance) in teamCfg.RandomChances)
     {
-      result.Add(extraPool[_random.Next(extraPool.Count)]);
+      if (_random.Next(0, 100) >= Math.Clamp(chance, 0, 100)) continue;
+      if (cfg.MaxPerGrenade.TryGetValue(grenade, out var cap))
+      {
+        rolledCounts.TryGetValue(grenade, out var already);
+        if (already >= cap) continue;
+        rolledCounts[grenade] = already + 1;
+      }
+      result.Add(grenade);
     }
-
     return result;
+  }
+
+  private static IEnumerable<string> ApplyMaxPerGrenade(
+    IEnumerable<string> grenades,
+    IReadOnlyDictionary<string, int> maxPerGrenade)
+  {
+    var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    var result = new List<string>();
+    foreach (var grenade in grenades)
+    {
+      if (maxPerGrenade.TryGetValue(grenade, out var cap))
+      {
+        counts.TryGetValue(grenade, out var already);
+        if (already >= cap) continue;
+        counts[grenade] = already + 1;
+      }
+      result.Add(grenade);
+    }
+    return result;
+  }
+
+  private static RoundTypeGrenadeConfig GetRoundGrenadeConfig(RoundType roundType, GrenadeConfig cfg)
+  {
+    return roundType switch
+    {
+      RoundType.Pistol => cfg.Pistol,
+      RoundType.HalfBuy => cfg.HalfBuy,
+      _ => cfg.FullBuy,
+    };
   }
 }

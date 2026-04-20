@@ -104,13 +104,7 @@ public sealed class PlayerEventHandlers
 
     var currentTeam = (Team)player.Controller.TeamNum;
 
-    // Allow initial team selection (player not yet on T/CT)
-    if (currentTeam != Team.T && currentTeam != Team.CT)
-    {
-      return HookResult.Continue;
-    }
-
-    // Allow switching to spectator (jointeam 1 or spectate command)
+    // Allow switching to spectator unconditionally
     if (cmd.StartsWith("spectate"))
     {
       return HookResult.Continue;
@@ -123,22 +117,48 @@ public sealed class PlayerEventHandlers
       {
         return HookResult.Continue;
       }
+
+      // Player on T/CT trying to switch teams mid-round — block
+      if (currentTeam == Team.T || currentTeam == Team.CT)
+      {
+        return HookResult.Stop;
+      }
+
+      // Player in spectator/none trying to join T/CT — enforce queue
+      if (_config.Config.Queue.Enabled)
+      {
+        if (_queue.IsActive(player.SteamID))
+        {
+          // Already tracked as active, allow
+          return HookResult.Continue;
+        }
+
+        if (_queue.ActiveCount >= _config.Config.Queue.MaxPlayers)
+        {
+          // Queue is full — send to queue, block the join
+          _queue.OnPlayerJoinedTeam(player, currentTeam, Team.CT);
+          return HookResult.Stop;
+        }
+      }
     }
 
-    // Block T/CT switching for players already on T/CT outside warmup
-    return HookResult.Stop;
+    return HookResult.Continue;
   }
 
   private HookResult OnPlayerTeamPre(EventPlayerTeam @event)
   {
-    // Team switching is blocked via OnClientCommand hook which uses HookResult.Stop
-    // This handler is kept for any edge cases where team changes happen programmatically
-    // without going through the command system
-    
-    // Allow programmatic team changes (e.g., team balance)
+    // Allow programmatic team changes (e.g., team balance, queue moves)
     if (_state.TeamChangeBypassEnabled) return HookResult.Continue;
 
-    return HookResult.Continue;
+    var player = @event.UserIdPlayer;
+    if (player is null || !player.IsValid) return HookResult.Continue;
+
+    if (!_config.Config.Queue.Enabled) return HookResult.Continue;
+
+    var fromTeam = (Team)player.Controller.TeamNum;
+    var toTeam = (Team)@event.Team;
+
+    return _queue.OnPlayerJoinedTeam(player, fromTeam, toTeam);
   }
 
   private HookResult OnPlayerSpawnPre(EventPlayerSpawn @event)
