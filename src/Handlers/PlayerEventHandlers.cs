@@ -331,19 +331,11 @@ public sealed class PlayerEventHandlers
 
   private HookResult OnPlayerHurt(EventPlayerHurt @event)
   {
-    var core = _core;
-    if (core is null) return HookResult.Continue;
-
     var victim = @event.UserIdPlayer;
     if (victim is null) return HookResult.Continue;
 
-    var attackerId = @event.Attacker;
-    if (attackerId <= 0) return HookResult.Continue;
-
-    var attacker = core.PlayerManager.GetAllPlayers()
-      .FirstOrDefault(p => p.IsValid && (p.PlayerID == attackerId || p.Slot == attackerId));
-
-    if (attacker is null) return HookResult.Continue;
+    var attacker = @event.AttackerPlayer;
+    if (attacker is null || !attacker.IsValid) return HookResult.Continue;
 
     _damageReport.OnPlayerHurt(attacker, victim, @event.DmgHealth);
     return HookResult.Continue;
