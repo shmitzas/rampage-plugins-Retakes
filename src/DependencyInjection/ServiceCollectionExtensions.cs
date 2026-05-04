@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
 
     // Register core services
     services.AddSingleton<IRetakesConfigService, RetakesConfigService>();
+    services.AddSingleton<IWeaponAliasConfigService, WeaponAliasConfigService>();
     services.AddSingleton<IMapConfigService, MapConfigService>();
     services.AddSingleton<IPawnLifecycleService, PawnLifecycleService>();
     services.AddSingleton<IRetakesStateService, RetakesStateService>();

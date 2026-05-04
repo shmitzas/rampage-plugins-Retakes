@@ -19,6 +19,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
 
     // Services resolved from DI container
     private IRetakesConfigService? _config;
+    private IWeaponAliasConfigService? _weaponAliasConfig;
     private IMapConfigService? _mapConfig;
     private IPawnLifecycleService? _pawnLifecycle;
     private IRetakesStateService? _state;
@@ -86,6 +87,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
 
         // Resolve services from DI container
         _config = _serviceProvider.GetRequiredService<IRetakesConfigService>();
+        _weaponAliasConfig = _serviceProvider.GetRequiredService<IWeaponAliasConfigService>();
         _mapConfig = _serviceProvider.GetRequiredService<IMapConfigService>();
         _pawnLifecycle = _serviceProvider.GetRequiredService<IPawnLifecycleService>();
         _state = _serviceProvider.GetRequiredService<IRetakesStateService>();
@@ -110,6 +112,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
 
         // Initialize services that need explicit initialization
         _config.LoadOrCreate();
+        _weaponAliasConfig.LoadOrCreate();
         _prefs.Initialize();
 
         // Create handlers with resolved services
@@ -123,7 +126,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
           _pawnLifecycle, _clutch, _prefs, _state, _config, _queue, _damageReport, _soloBot, _allocation);
 
         _commandHandlers = new CommandHandlers(
-          _mapConfig, _spawnManager, _pawnLifecycle, _spawnViz, _state, _prefs, _config, _smokeScenario, _allocation);
+                    _mapConfig, _spawnManager, _pawnLifecycle, _spawnViz, _state, _prefs, _config, _weaponAliasConfig, _smokeScenario, _allocation);
 
         _mapEventHandlers = new MapEventHandlers(mapName =>
         {
@@ -181,6 +184,7 @@ public partial class SwiftlyS2_Retakes : BasePlugin
 
         // Clear service references
         _config = null;
+        _weaponAliasConfig = null;
         _mapConfig = null;
         _pawnLifecycle = null;
         _state = null;

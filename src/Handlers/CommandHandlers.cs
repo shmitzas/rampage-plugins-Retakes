@@ -28,6 +28,7 @@ public sealed class CommandHandlers
   private readonly IRetakesStateService _state;
   private readonly IPlayerPreferencesService _prefs;
   private readonly IRetakesConfigService _config;
+  private readonly IWeaponAliasConfigService _weaponAliasConfig;
   private readonly ISmokeScenarioService _smokeScenario;
   private readonly IAllocationService _allocation;
 
@@ -41,6 +42,7 @@ public sealed class CommandHandlers
     IRetakesStateService state,
     IPlayerPreferencesService prefs,
     IRetakesConfigService config,
+    IWeaponAliasConfigService weaponAliasConfig,
     ISmokeScenarioService smokeScenario,
     IAllocationService allocation
   )
@@ -52,6 +54,7 @@ public sealed class CommandHandlers
     _state = state;
     _prefs = prefs;
     _config = config;
+    _weaponAliasConfig = weaponAliasConfig;
     _smokeScenario = smokeScenario;
     _allocation = allocation;
   }
@@ -1244,11 +1247,15 @@ public sealed class CommandHandlers
   /// Resolves user input to a weapon_ entity name.
   /// Accepts: weapon_ak47, ak47, AK-47, m4a1-s, M4A1-S, usp, deagle, etc.
   /// </summary>
-  private static string ResolveWeaponName(string input)
+  private string ResolveWeaponName(string input)
   {
     // Already a weapon_ name — use as-is
     if (input.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase))
       return input;
+
+    // Custom aliases from resources/guns.jsonc
+    if (_weaponAliasConfig.TryResolve(input, out var customAlias))
+      return customAlias;
 
     // Check common player aliases first
     if (WeaponAliases.TryGetValue(input, out var alias))
@@ -1263,6 +1270,9 @@ public sealed class CommandHandlers
 
     // Try matching display name with spaces/hyphens removed (e.g. "m4a1s" matches "M4A1-S")
     var normalized = input.Replace("-", "").Replace(" ", "");
+    if (_weaponAliasConfig.TryResolve(normalized, out var normalizedCustomAlias))
+      return normalizedCustomAlias;
+
     if (WeaponAliases.TryGetValue(normalized, out var normalizedAlias))
       return normalizedAlias;
 
@@ -1496,6 +1506,7 @@ public sealed class CommandHandlers
     try
     {
       _config.LoadOrCreate();
+      _weaponAliasConfig.LoadOrCreate();
       _config.ApplyToConvars(restartGame: true);
       context.Reply(Tr(context, "command.reloadcfg.success"));
     }
